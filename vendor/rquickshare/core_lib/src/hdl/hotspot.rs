@@ -1,20 +1,29 @@
 //! Wi-Fi Hotspot management for transferring without a shared network.
 //!
-//! Phase 1 (this module): isolated OS-level hotspot control via NetworkManager
-//! (`nmcli`). It does NOT touch the Quick Share protocol yet — it only knows
-//! how to bring a temporary access point up and down, and to restore the
-//! previously active Wi-Fi connection afterward.
+//! Phase 1: isolated OS-level hotspot control via NetworkManager (`nmcli`):
+//! bring a temporary access point up/down and restore the previously active
+//! Wi-Fi connection. Honors a dry-run mode so development never drops the
+//! dev's own connection.
 //!
-//! Safety: bringing up an AP takes the Wi-Fi radio off the current network, so
-//! every public entry point honors a dry-run mode. With dry-run on (the
-//! default), the commands are logged but not executed, which is invaluable for
-//! development without dropping the developer's own connection.
+//! Phase 2 (`negotiation` below): build and parse the
+//! `BandwidthUpgradeNegotiationFrame` used by Quick Share to switch transport
+//! to `WIFI_HOTSPOT`. This is pure (de)serialization, independent of actually
+//! creating an AP — so it can be unit-tested without touching the network.
 
 use std::process::Command;
 
 use anyhow::{Context, anyhow};
 
 const NMCLI: &str = "nmcli";
+
+// Protocol types for medium-upgrade negotiation (phase 2).
+use crate::location_nearby_connections::bandwidth_upgrade_negotiation_frame::{
+    EventType, UpgradePathInfo,
+    upgrade_path_info::{Medium, WifiHotspotCredentials},
+};
+use crate::location_nearby_connections::{BandwidthUpgradeNegotiationFrame, OfflineFrame, V1Frame};
+use crate::location_nearby_connections::offline_frame::Version;
+use crate::location_nearby_connections::v1_frame::FrameType;
 
 /// Credentials for a hotspot we created (to hand to the peer) or that we were
 /// told to join.
@@ -177,6 +186,60 @@ fn random_password(len: usize) -> String {
         .collect()
 }
 
+/// Build an `UPGRADE_PATH_AVAILABLE` offline frame offering WIFI_HOTSPOT with
+/// the given credentials. This is what the host (the side that created the AP)
+/// sends so the peer knows which network to join and where to reconnect.
+pub fn build_hotspot_upgrade_frame(creds: &HotspotCredentials, port: i32, gateway: &str) -> OfflineFrame {
+    let info = UpgradePathInfo {
+        medium: Some(Medium::WifiHotspot as i32),
+        wifi_hotspot_credentials: Some(WifiHotspotCredentials {
+            ssid: Some(creds.ssid.clone()),
+            password: Some(creds.password.clone()),
+            port: Some(port),
+            gateway: Some(gateway.to_string()),
+            frequency: Some(-1),
+        }),
+        ..Default::default()
+    };
+
+    OfflineFrame {
+        version: Some(Version::V1 as i32),
+        v1: Some(V1Frame {
+            r#type: Some(FrameType::BandwidthUpgradeNegotiation as i32),
+            bandwidth_upgrade_negotiation: Some(BandwidthUpgradeNegotiationFrame {
+                event_type: Some(EventType::UpgradePathAvailable as i32),
+                upgrade_path_info: Some(info),
+                ..Default::default()
+            }),
+            ..Default::default()
+        }),
+    }
+}
+
+/// Extract WIFI_HOTSPOT credentials from a received bandwidth-upgrade frame, if
+/// it offers exactly that medium. Returns `None` for any other frame/medium.
+pub fn parse_hotspot_upgrade_frame(frame: &OfflineFrame) -> Option<(HotspotCredentials, i32, String)> {
+    let v1 = frame.v1.as_ref()?;
+    let neg = v1.bandwidth_upgrade_negotiation.as_ref()?;
+    if neg.event_type != Some(EventType::UpgradePathAvailable as i32) {
+        return None;
+    }
+    let info = neg.upgrade_path_info.as_ref()?;
+    if info.medium != Some(Medium::WifiHotspot as i32) {
+        return None;
+    }
+    let c = info.wifi_hotspot_credentials.as_ref()?;
+    let creds = HotspotCredentials {
+        ssid: c.ssid.clone()?,
+        password: c.password.clone().unwrap_or_default(),
+        // iface is the joiner's own Wi-Fi device; filled in by the caller.
+        iface: String::new(),
+    };
+    let port = c.port.unwrap_or(0);
+    let gateway = c.gateway.clone().unwrap_or_else(|| "0.0.0.0".to_string());
+    Some((creds, port, gateway))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -198,5 +261,31 @@ mod tests {
     fn generated_credentials_are_random() {
         assert_ne!(random_suffix(8), random_suffix(8));
         assert_ne!(random_password(16), random_password(16));
+    }
+
+    #[test]
+    fn hotspot_upgrade_frame_round_trips() {
+        let creds = HotspotCredentials {
+            ssid: "TKShare-AB12".to_string(),
+            password: "secretpass99".to_string(),
+            iface: "wlp0s20f3".to_string(),
+        };
+        let frame = build_hotspot_upgrade_frame(&creds, 51000, "10.42.0.1");
+        let (parsed, port, gateway) =
+            parse_hotspot_upgrade_frame(&frame).expect("frame should parse as hotspot upgrade");
+        assert_eq!(parsed.ssid, creds.ssid);
+        assert_eq!(parsed.password, creds.password);
+        assert_eq!(port, 51000);
+        assert_eq!(gateway, "10.42.0.1");
+    }
+
+    #[test]
+    fn non_hotspot_frame_is_ignored() {
+        // A default/empty frame must not be mistaken for a hotspot offer.
+        let frame = OfflineFrame {
+            version: Some(Version::V1 as i32),
+            v1: Some(V1Frame::default()),
+        };
+        assert!(parse_hotspot_upgrade_frame(&frame).is_none());
     }
 }
