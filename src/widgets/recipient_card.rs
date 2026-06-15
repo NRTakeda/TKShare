@@ -400,9 +400,8 @@ pub fn create_recipient_card(
     // Tracks a pending "consent timeout": if the peer never accepts (or
     // declines) within a few seconds of us requesting, we give up instead of
     // showing "Requested" forever. Mirrors how Google's client behaves.
-    let consent_timeout_source: std::rc::Rc<
-        std::cell::RefCell<Option<glib::SourceId>>,
-    > = std::rc::Rc::new(std::cell::RefCell::new(None));
+    let consent_timeout_source: std::rc::Rc<std::cell::RefCell<Option<glib::SourceId>>> =
+        std::rc::Rc::new(std::cell::RefCell::new(None));
 
     model_item.connect_event_notify(clone!(
         #[weak]
@@ -601,11 +600,8 @@ pub fn create_recipient_card(
                         imp.toast_overlay.add_toast(
                             adw::Toast::builder()
                                 .title(
-                                    &formatx!(
-                                        gettext("Sent to {}"),
-                                        model_item.device_name()
-                                    )
-                                    .unwrap_or_else(|_| finished_text.clone()),
+                                    &formatx!(gettext("Sent to {}"), model_item.device_name())
+                                        .unwrap_or_else(|_| finished_text.clone()),
                                 )
                                 .timeout(3)
                                 .build(),

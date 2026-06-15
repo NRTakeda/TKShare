@@ -27,7 +27,7 @@ body:
         **For Flatpak:**
 
         ```
-        flatpak run io.github.nozwock.Packet | tee packet.log
+        flatpak run io.github.NRTakeda.TKShare | tee tkshare.log
         ```
 
         **For Non-Flatpak:**

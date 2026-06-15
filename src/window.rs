@@ -1690,7 +1690,9 @@ impl PacketApplicationWindow {
         // whether the change came from the switch, the tray or the remote peer.
         #[cfg(target_os = "linux")]
         if let Some(handle) = imp.tray_icon_handle.borrow().as_ref() {
-            handle.update(move |tray| tray.is_visible = visibility).await;
+            handle
+                .update(move |tray| tray.is_visible = visibility)
+                .await;
         }
 
         if let Some(rqs) = imp.rqs.lock().await.as_mut() {

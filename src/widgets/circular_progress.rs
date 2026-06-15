@@ -3,8 +3,8 @@ use std::f64::consts::PI;
 use std::rc::Rc;
 
 use adw::prelude::*;
-use gtk::glib::clone;
 use gtk::glib;
+use gtk::glib::clone;
 
 /// A circular progress indicator with the percentage shown in the center,
 /// similar to the one on Android's Quick Share. The displayed value animates
@@ -56,7 +56,11 @@ impl CircularProgress {
 
                 // Resolve the theme's accent color (libadwaita 1.6+).
                 let accent = adw::StyleManager::default().accent_color_rgba();
-                let (ar, ag, ab) = (accent.red() as f64, accent.green() as f64, accent.blue() as f64);
+                let (ar, ag, ab) = (
+                    accent.red() as f64,
+                    accent.green() as f64,
+                    accent.blue() as f64,
+                );
 
                 // Track (dim background ring).
                 cr.set_line_width(stroke);
@@ -92,7 +96,8 @@ impl CircularProgress {
     pub fn set_fraction(&self, fraction: f64) {
         let f = fraction.clamp(0.0, 1.0);
         self.target.set(f);
-        self.label.set_label(&format!("{}%", (f * 100.0).round() as i32));
+        self.label
+            .set_label(&format!("{}%", (f * 100.0).round() as i32));
 
         if self.animating.get() {
             return; // a tick loop is already running; it will pick up the new target
