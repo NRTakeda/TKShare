@@ -4,6 +4,15 @@ using Adw 1;
 menu primary_menu {
     section {
         item {
+            // Translators: brings up a temporary Wi-Fi hotspot so a phone can
+            // connect directly when there's no shared network.
+            label: _("Create _Temporary Network");
+            action: "win.assisted-hotspot";
+        }
+    }
+
+    section {
+        item {
             label: _("_Preferences");
             action: "win.preferences";
         }

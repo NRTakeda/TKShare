@@ -430,16 +430,110 @@ impl PacketApplicationWindow {
             })
             .build();
 
+        let assisted_hotspot = gio::ActionEntry::builder("assisted-hotspot")
+            .activate(move |win: &Self, _, _| {
+                win.show_assisted_hotspot_dialog();
+            })
+            .build();
+
         self.add_action_entries([
             preferences_dialog,
             received_files,
             help_dialog,
             pick_download_folder,
+            assisted_hotspot,
         ]);
     }
 
     fn add_toast(&self, msg: &str) {
         self.imp().toast_overlay.add_toast(adw::Toast::new(msg));
+    }
+
+    /// Detect the first Wi-Fi interface name from sysfs (e.g. "wlp0s20f3").
+    fn detect_wifi_iface() -> Option<String> {
+        let entries = std::fs::read_dir("/sys/class/net").ok()?;
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            // Wireless interfaces have a `wireless` subdir.
+            if entry.path().join("wireless").exists() {
+                return Some(name);
+            }
+        }
+        None
+    }
+
+    /// Bring up an assisted hotspot and show its credentials so a phone can
+    /// join directly (for transferring without a shared network).
+    fn show_assisted_hotspot_dialog(&self) {
+        let imp = self.imp();
+
+        let Some(iface) = Self::detect_wifi_iface() else {
+            self.add_toast(&gettext("No Wi-Fi adapter found"));
+            return;
+        };
+
+        // Set PACKET_HOTSPOT_REAL=1 to actually create the AP. Without it we run
+        // in dry-run so testing never drops the current connection.
+        let dry_run = std::env::var_os("PACKET_HOTSPOT_REAL").is_none();
+
+        let creds = {
+            let mut guard = imp.rqs.blocking_lock();
+            match guard.as_mut() {
+                Some(rqs) => rqs.start_assisted_hotspot(&iface, dry_run),
+                None => {
+                    self.add_toast(&gettext("Service not running"));
+                    return;
+                }
+            }
+        };
+
+        let creds = match creds {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::warn!("assisted hotspot failed: {e}");
+                self.add_toast(&gettext("Couldn't create the temporary network"));
+                return;
+            }
+        };
+
+        let body = if dry_run {
+            formatx::formatx!(
+                gettext("(Test mode) Would create network \"{}\" with password \"{}\""),
+                creds.ssid,
+                creds.password
+            )
+            .unwrap_or_default()
+        } else {
+            formatx::formatx!(
+                gettext("Connect your phone to Wi-Fi \"{}\" with password \"{}\", then share as usual. Close this to stop the network."),
+                creds.ssid,
+                creds.password
+            )
+            .unwrap_or_default()
+        };
+
+        let dialog = adw::AlertDialog::builder()
+            .heading(gettext("Temporary Network"))
+            .body(body)
+            .build();
+        dialog.add_responses(&[("close", &gettext("Stop Network"))]);
+        dialog.set_default_response(Some("close"));
+
+        dialog.connect_response(
+            None,
+            clone!(
+                #[weak(rename_to = win)]
+                self,
+                move |_, _| {
+                    let mut guard = win.imp().rqs.blocking_lock();
+                    if let Some(rqs) = guard.as_mut() {
+                        let _ = rqs.stop_assisted_hotspot();
+                    }
+                }
+            ),
+        );
+
+        dialog.present(Some(self));
     }
 
     fn get_device_name_state(&self) -> glib::GString {

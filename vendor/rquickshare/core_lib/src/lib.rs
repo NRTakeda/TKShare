@@ -70,6 +70,12 @@ pub struct RQS {
     pub port_number: Option<u32>,
 
     pub message_sender: broadcast::Sender<ChannelMessage>,
+
+    // Assisted hotspot: a temporary AP the user can bring up to share without a
+    // common network. Held here so it (and the restored connection) lives as
+    // long as the session.
+    #[cfg(all(feature = "experimental", target_os = "linux"))]
+    hotspot: Option<crate::hdl::HotspotManager>,
 }
 
 impl Default for RQS {
@@ -117,7 +123,38 @@ impl RQS {
             ble_sender,
             port_number,
             message_sender,
+            #[cfg(all(feature = "experimental", target_os = "linux"))]
+            hotspot: None,
         }
+    }
+
+    /// Bring up a temporary Wi-Fi hotspot so a phone can join the PC directly
+    /// (assisted flow for when there's no shared network). Returns the
+    /// credentials to display to the user. `dry_run` logs the commands without
+    /// touching the network — useful for testing.
+    #[cfg(all(feature = "experimental", target_os = "linux"))]
+    pub fn start_assisted_hotspot(
+        &mut self,
+        iface: &str,
+        dry_run: bool,
+    ) -> Result<crate::hdl::HotspotCredentials, anyhow::Error> {
+        // Tear down any previous one first.
+        if let Some(mut prev) = self.hotspot.take() {
+            let _ = prev.teardown();
+        }
+        let mut mgr = crate::hdl::HotspotManager::new(dry_run);
+        let creds = mgr.create(iface)?;
+        self.hotspot = Some(mgr);
+        Ok(creds)
+    }
+
+    /// Tear down the assisted hotspot and restore the previous connection.
+    #[cfg(all(feature = "experimental", target_os = "linux"))]
+    pub fn stop_assisted_hotspot(&mut self) -> Result<(), anyhow::Error> {
+        if let Some(mut mgr) = self.hotspot.take() {
+            mgr.teardown()?;
+        }
+        Ok(())
     }
 
     pub async fn run(
