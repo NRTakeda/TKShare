@@ -73,3 +73,28 @@
   background-color: alpha(var(--accent-color, @accent_color), 0.08);
   transition: background-color 150ms ease-in-out;
 }
+
+/* ---- Assisted hotspot QR popover -------------------------------------- */
+
+/* White card around the QR code: a quiet zone (padding) and rounded corners
+   make it read as a scannable target and improve camera recognition. */
+.qr-frame {
+  background-color: #ffffff;
+  border-radius: 12px;
+  padding: 12px;
+  box-shadow: 0 1px 4px alpha(black, 0.18);
+}
+
+/* Discreet "test mode" pill shown when the hotspot runs in dry-run. */
+.qr-test-badge {
+  background-color: alpha(var(--warning-color, @warning_color), 0.15);
+  color: var(--warning-color, @warning_color);
+  border-radius: 99px;
+  padding: 2px 10px;
+  font-weight: bold;
+}
+
+/* Network/password line: monospace so the credentials are easy to read. */
+.qr-credentials {
+  font-family: monospace;
+}

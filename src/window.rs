@@ -503,28 +503,49 @@ impl PacketApplicationWindow {
     ) -> gtk::Popover {
         let content = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
-            .spacing(10)
+            .spacing(12)
             .halign(gtk::Align::Center)
-            .margin_top(12)
-            .margin_bottom(12)
-            .margin_start(12)
-            .margin_end(12)
+            .margin_top(16)
+            .margin_bottom(16)
+            .margin_start(16)
+            .margin_end(16)
             .build();
 
+        // Title for the popover, in the heading style.
+        let title = gtk::Label::builder()
+            .label(&gettext("Connect your phone"))
+            .css_classes(["title-4"])
+            .build();
+        content.append(&title);
+
+        // In dry-run, show a clear "test mode" pill instead of a parenthetical.
+        if dry_run {
+            let badge = gtk::Label::builder()
+                .label(&gettext("Test mode"))
+                .css_classes(["qr-test-badge", "caption"])
+                .halign(gtk::Align::Center)
+                .build();
+            content.append(&badge);
+        }
+
         let hint = gtk::Label::builder()
-            .label(if dry_run {
-                gettext("(Test mode) Scan to join")
-            } else {
-                gettext("Scan with your phone's camera to join")
-            })
+            .label(&gettext("Scan with your phone's camera to join"))
             .wrap(true)
             .justify(gtk::Justification::Center)
             .max_width_chars(28)
+            .css_classes(["dimmed"])
             .build();
         content.append(&hint);
 
+        // Wrap the QR in a white, rounded card so it reads as a scan target
+        // and stays legible regardless of the app's light/dark theme.
         if let Some(qr) = Self::build_qr_picture(payload, 220) {
-            content.append(&qr);
+            let frame = gtk::Box::builder()
+                .halign(gtk::Align::Center)
+                .css_classes(["qr-frame"])
+                .build();
+            frame.append(&qr);
+            content.append(&frame);
         }
 
         let creds_label = gtk::Label::builder()
@@ -534,7 +555,7 @@ impl PacketApplicationWindow {
             )
             .wrap(true)
             .justify(gtk::Justification::Center)
-            .css_classes(["dimmed", "caption"])
+            .css_classes(["qr-credentials", "dimmed", "caption"])
             .selectable(true)
             .build();
         content.append(&creds_label);
@@ -548,9 +569,17 @@ impl PacketApplicationWindow {
             .wrap(true)
             .justify(gtk::Justification::Center)
             .max_width_chars(30)
-            .css_classes(["caption"])
+            .css_classes(["caption", "dimmed"])
             .build();
         content.append(&visibility_hint);
+
+        // Separator before the destructive action, to set it apart.
+        content.append(
+            &gtk::Separator::builder()
+                .orientation(gtk::Orientation::Horizontal)
+                .margin_top(4)
+                .build(),
+        );
 
         let popover = gtk::Popover::builder()
             .child(&content)
@@ -562,7 +591,6 @@ impl PacketApplicationWindow {
             .label(&gettext("Stop Network"))
             .css_classes(["destructive-action", "pill"])
             .halign(gtk::Align::Center)
-            .margin_top(6)
             .build();
         stop_button.connect_clicked(clone!(
             #[weak(rename_to = win)]
@@ -624,9 +652,14 @@ impl PacketApplicationWindow {
         let popover = self.build_qr_popover(&wifi_payload, &creds.ssid, &creds.password, dry_run);
         popover.set_parent(&imp.hotspot_banner.get());
 
-        // Show the banner and wire its button to toggle the QR popover.
+        // Show the banner and wire its button to toggle the QR popover. In
+        // dry-run, say so in the title so it's never mistaken for the real AP.
         let banner = imp.hotspot_banner.get();
-        banner.set_title(&gettext("Temporary network active"));
+        banner.set_title(&if dry_run {
+            gettext("Temporary network (test mode)")
+        } else {
+            gettext("Temporary network active")
+        });
         banner.set_button_label(Some(&gettext("Show QR")));
         banner.set_revealed(true);
         // Refresh the bottom status bar to reflect the hotspot state.
