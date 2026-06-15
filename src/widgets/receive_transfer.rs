@@ -180,19 +180,30 @@ pub fn present_receive_transfer_ui(
                 Some(UserAction::ConsentAccept) => {
                     consent_dialog.close();
 
-                    win.imp()
-                        .rqs
-                        .blocking_lock()
-                        .as_mut()
-                        .unwrap()
-                        .message_sender
-                        .send(rqs_lib::channel::ChannelMessage {
-                            id: event.id.to_string(),
-                            msg: rqs_lib::channel::Message::Lib {
-                                action: rqs_lib::channel::TransferAction::ConsentAccept,
-                            },
-                        })
-                        .unwrap();
+                    // Forward the accept to the engine. Don't panic if the
+                    // service is unexpectedly gone or the channel is closed;
+                    // surface a toast instead so the app stays alive.
+                    let send_result = {
+                        let mut guard = win.imp().rqs.blocking_lock();
+                        match guard.as_mut() {
+                            Some(rqs) => rqs
+                                .message_sender
+                                .send(rqs_lib::channel::ChannelMessage {
+                                    id: event.id.to_string(),
+                                    msg: rqs_lib::channel::Message::Lib {
+                                        action: rqs_lib::channel::TransferAction::ConsentAccept,
+                                    },
+                                })
+                                .map_err(|e| e.to_string()),
+                            None => Err("service not running".to_owned()),
+                        }
+                    };
+                    if let Err(e) = send_result {
+                        tracing::warn!("Couldn't forward ConsentAccept: {e}");
+                        win.imp()
+                            .toast_overlay
+                            .add_toast(adw::Toast::new(&gettext("Couldn't accept the transfer")));
+                    }
 
                     // Update the notification
                     spawn_notification(
@@ -265,7 +276,12 @@ pub fn present_receive_transfer_ui(
 
             let event_msg = receive_state.event().expect("ReceiveTransferState.event must be set");
             let client_msg = event_msg.msg.as_client_unchecked();
-            let metadata = client_msg.metadata.as_ref().unwrap();
+            // A client message without metadata can't drive the receive UI;
+            // ignore it instead of panicking on a malformed/unexpected event.
+            let Some(metadata) = client_msg.metadata.as_ref() else {
+                tracing::warn!("Inbound client message without metadata; ignoring");
+                return;
+            };
 
             match client_msg.state.clone().unwrap_or(TransferState::Initial) {
                 TransferState::Initial => {}
@@ -479,6 +495,8 @@ pub fn present_receive_transfer_ui(
                     }
                 }
                 TransferState::ReceivingFiles => {
+                    // Soft breathing pulse while files are coming in.
+                    progress_bar.add_css_class("transfer-active");
                     if !event_msg.is_text_type() {
                         let eta_text = {
                             if let Some(meta) = &client_msg.metadata {
@@ -576,6 +594,7 @@ pub fn present_receive_transfer_ui(
                     }
                 }
                 TransferState::Finished => {
+                    progress_bar.remove_css_class("transfer-active");
                     progress_dialog.set_can_close(true);
                     if let Some(UserAction::ConsentAccept) = receive_state.user_action() {
                         progress_dialog.close();

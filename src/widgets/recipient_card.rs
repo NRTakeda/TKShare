@@ -1,7 +1,7 @@
 use crate::{
     ext::MessageExt,
     objects::{self, TransferState, send_transfer::SendRequestState},
-    tokio_runtime,
+    tokio_runtime, widgets,
     window::PacketApplicationWindow,
 };
 
@@ -187,6 +187,8 @@ pub fn create_recipient_card(
         .spacing(12)
         .build();
     let root_bin = adw::Bin::builder().child(&root_box).build();
+    // Animate the card sliding/fading in as the device is discovered.
+    root_bin.add_css_class("device-found");
 
     let device_avatar = adw::Avatar::builder().show_initials(true).size(48).build();
     model_item
@@ -274,16 +276,13 @@ pub fn create_recipient_card(
         }
     ));
 
-    let progress_bar = gtk::ProgressBar::builder().visible(false).build();
-    main_box.append(&progress_bar);
-
-    let eta_label = gtk::Label::builder()
-        .halign(gtk::Align::Start)
-        .wrap(true)
-        .visible(false)
-        .css_classes(["caption", "dim-label"])
-        .build();
-    main_box.append(&eta_label);
+    // Circular progress with the percentage in the center (Quick Share style),
+    // shown while a transfer is in progress.
+    let circular = std::rc::Rc::new(widgets::create_circular_progress(56));
+    circular.widget.set_visible(false);
+    circular.widget.set_halign(gtk::Align::Start);
+    circular.widget.set_margin_top(6);
+    main_box.append(&circular.widget);
 
     let id = model_item.endpoint_info().id.clone();
 
@@ -339,11 +338,12 @@ pub fn create_recipient_card(
         }
     ));
 
-    fn set_progress_bar_fraction(progress_bar: &gtk::ProgressBar, client_msg: &MessageClient) {
-        if let Some(metadata) = &client_msg.metadata {
-            if metadata.total_bytes > 0 {
-                progress_bar.set_fraction(metadata.ack_bytes as f64 / metadata.total_bytes as f64);
-            }
+    fn transfer_fraction(client_msg: &MessageClient) -> Option<f64> {
+        let metadata = client_msg.metadata.as_ref()?;
+        if metadata.total_bytes > 0 {
+            Some(metadata.ack_bytes as f64 / metadata.total_bytes as f64)
+        } else {
+            None
         }
     }
 
@@ -397,11 +397,27 @@ pub fn create_recipient_card(
             }
         }
     ));
+    // Tracks a pending "consent timeout": if the peer never accepts (or
+    // declines) within a few seconds of us requesting, we give up instead of
+    // showing "Requested" forever. Mirrors how Google's client behaves.
+    let consent_timeout_source: std::rc::Rc<
+        std::cell::RefCell<Option<glib::SourceId>>,
+    > = std::rc::Rc::new(std::cell::RefCell::new(None));
+
     model_item.connect_event_notify(clone!(
         #[weak]
         imp,
+        #[strong]
+        consent_timeout_source,
+        #[strong]
+        circular,
         move |model_item| {
             use rqs_lib::TransferState as RqsState;
+
+            // Any new state transition cancels a pending consent timeout.
+            if let Some(source) = consent_timeout_source.borrow_mut().take() {
+                source.remove();
+            }
 
             let eta_estimator = model_item.imp().eta.as_ref();
 
@@ -457,6 +473,44 @@ pub fn create_recipient_card(
                         );
 
                         eta_estimator.borrow_mut().prepare_for_new_transfer(None);
+
+                        // Arm a consent timeout: if the peer doesn't move the
+                        // transfer forward within 10s, mark it failed instead of
+                        // hanging on "Requested" forever. Cancelled at the top of
+                        // this closure on any subsequent state change.
+                        let source = glib::timeout_add_seconds_local_once(
+                            10,
+                            clone!(
+                                #[weak]
+                                model_item,
+                                #[weak]
+                                result_label,
+                                #[weak]
+                                retry_button,
+                                #[weak]
+                                cancel_transfer_button,
+                                #[weak]
+                                pincode_label,
+                                move || {
+                                    if matches!(
+                                        model_item.transfer_state(),
+                                        TransferState::RequestedForConsent
+                                    ) {
+                                        model_item.set_transfer_state(TransferState::Failed);
+                                        // Reflect the failure visually, like the
+                                        // Disconnected branch does for the
+                                        // remote-initiated case.
+                                        cancel_transfer_button.set_visible(false);
+                                        pincode_label.set_visible(false);
+                                        retry_button.set_visible(true);
+                                        result_label.set_visible(true);
+                                        result_label.set_label(&gettext("No response"));
+                                        result_label.set_css_classes(&["error"]);
+                                    }
+                                }
+                            ),
+                        );
+                        consent_timeout_source.borrow_mut().replace(source);
                     }
                     RqsState::SendingFiles => {
                         model_item.set_transfer_state(TransferState::OngoingTransfer);
@@ -467,34 +521,21 @@ pub fn create_recipient_card(
                         pincode_label.set_visible(false);
                         retry_button.set_visible(false);
 
-                        let eta_text = {
-                            if let Some(metadata) = &client_msg.metadata {
-                                eta_estimator
-                                    .borrow_mut()
-                                    .step_with(metadata.ack_bytes as usize);
-                            }
-
-                            formatx!(
-                                gettext("About {} left"),
-                                eta_estimator.borrow().get_estimate_string().trim()
-                            )
-                            .unwrap_or_else(|_| "badly formatted locale string".into())
-                        };
-                        eta_label.set_visible(true);
-                        eta_label.set_label(&eta_text);
-
-                        progress_bar.set_visible(true);
-                        set_progress_bar_fraction(&progress_bar, &client_msg);
+                        // Circular progress with the percentage, animated.
+                        circular.widget.set_visible(true);
+                        if let Some(frac) = transfer_fraction(&client_msg) {
+                            circular.set_fraction(frac);
+                        }
                     }
                     RqsState::Disconnected => {
+                        circular.widget.set_visible(false);
                         model_item.set_transfer_state(TransferState::Failed);
                         // FIXME: Wait for 5~10 seconds after a send and timeout
                         // if did not receive SendingFiles within that timeframe
                         // This is how google does it in their client
 
-                        progress_bar.set_visible(false);
+                        circular.widget.set_visible(false);
                         cancel_transfer_button.set_visible(false);
-                        eta_label.set_visible(false);
                         unavailibility_label.set_visible(false);
                         pincode_label.set_visible(false);
 
@@ -519,9 +560,8 @@ pub fn create_recipient_card(
                         );
                         set_row_activatable(model_item, listbox_row.as_ref(), true);
 
-                        progress_bar.set_visible(false);
+                        circular.widget.set_visible(false);
                         cancel_transfer_button.set_visible(false);
-                        eta_label.set_visible(false);
                         result_label.set_visible(false);
                         retry_button.set_visible(false);
                         pincode_label.set_visible(false);
@@ -535,8 +575,9 @@ pub fn create_recipient_card(
                         model_item.set_transfer_state(TransferState::Done);
 
                         cancel_transfer_button.set_visible(false);
-                        progress_bar.set_visible(false);
-                        eta_label.set_visible(false);
+                        // Snap to 100% then hide the ring on completion.
+                        circular.set_fraction(1.0);
+                        circular.widget.set_visible(false);
                         retry_button.set_visible(false);
                         unavailibility_label.set_visible(false);
                         pincode_label.set_visible(false);
@@ -552,7 +593,23 @@ pub fn create_recipient_card(
 
                         result_label.set_visible(true);
                         result_label.set_label(&finished_text);
-                        result_label.set_css_classes(&["accent"]);
+                        // Celebratory pop on success.
+                        result_label.set_css_classes(&["accent", "transfer-done"]);
+
+                        // Also surface a toast so success is noticed even if the
+                        // recipients dialog isn't in focus.
+                        imp.toast_overlay.add_toast(
+                            adw::Toast::builder()
+                                .title(
+                                    &formatx!(
+                                        gettext("Sent to {}"),
+                                        model_item.device_name()
+                                    )
+                                    .unwrap_or_else(|_| finished_text.clone()),
+                                )
+                                .timeout(3)
+                                .build(),
+                        );
                     }
                 };
             }

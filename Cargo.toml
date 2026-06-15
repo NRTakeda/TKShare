@@ -1,6 +1,6 @@
 [package]
-name = "packet"
-authors = ["nozwock"]
+name = "tkshare"
+authors = ["Natan Ramos Takeda", "nozwock (upstream Packet)"]
 edition = "2024"
 
 [profile.release]
@@ -49,3 +49,9 @@ const-str = "0.7.0"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 ksni = { version = "0.3", default-features = false, features = ["async-io"] }
+
+# Use our local copy of the engine so we can hack on the Quick Share protocol.
+# Path is relative to the project root so it's also copied into the Flatpak
+# build sandbox (which only sees files under this directory).
+[patch."https://github.com/nozwock/rquickshare.git"]
+rqs_lib = { path = "vendor/rquickshare/core_lib" }

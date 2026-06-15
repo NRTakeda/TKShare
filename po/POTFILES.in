@@ -18,6 +18,6 @@ src/widgets/receive_transfer.rs
 src/widgets/recipient_card.rs
 src/window.rs
 data/resources/plugins/packet_nautilus.py.in
-data/io.github.nozwock.Packet.desktop.in.in
-data/io.github.nozwock.Packet.gschema.xml.in
-data/io.github.nozwock.Packet.metainfo.xml.in.in
+data/io.github.NRTakeda.TKShare.desktop.in.in
+data/io.github.NRTakeda.TKShare.gschema.xml.in
+data/io.github.NRTakeda.TKShare.metainfo.xml.in.in

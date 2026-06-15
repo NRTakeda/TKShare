@@ -1,108 +1,62 @@
-# <img src="data/icons/io.github.nozwock.Packet.svg" /> Packet
-
-A partial implementation of Google's Quick Share protocol that lets you send and receive files wirelessly from Android devices using Quick Share, or another device with Packet.
-
 <div align="center">
-    <img src="data/resources/screenshots/packet-receive.png" alt="screenshot" />
+  <img src="data/icons/io.github.NRTakeda.TKShare.svg" width="96" />
+  <h1>TKShare</h1>
+  <p><strong>Quick Share nativo para Linux / GNOME</strong></p>
 </div>
 
-## Installation
+TKShare envia e recebe arquivos sem fio com dispositivos Android usando o
+**Quick Share** (Nearby Share) do Google, direto do seu desktop GNOME. É um
+fork do [Packet](https://github.com/nozwock/packet), construído sobre o motor
+de protocolo do [rquickshare](https://github.com/Martichou/rquickshare)
+(`rqs_lib`).
 
-[![flathub-installs-badge]][flathub]
+## Por que este fork
 
-<a href="https://flathub.org/apps/details/io.github.nozwock.Packet">
-<img src="https://flathub.org/api/badge?svg&locale=en&dark" width="190px" />
-</a>
+TKShare nasceu de uso pessoal e foca em desempenho, estabilidade e uma
+experiência de transferência mais polida. Em relação ao Packet original:
 
-#### Nightly
-Nightly Flatpak builds are available from [here][nightly-build].
+- **Build otimizado por padrão.** O motor é compilado em modo release mesmo no
+  perfil de desenvolvimento. A criptografia (AES) por chunk era dezenas de
+  vezes mais lenta em debug, o que limitava muito a velocidade de transferência.
+- **Caminho de dados mais enxuto.** Menos cópias de buffer por chunk, sem
+  serialização duplicada do corpo cifrado, e `TCP_NODELAY` nos sockets.
+- **Progresso em círculo com porcentagem**, animado, no estilo do Android, em
+  vez de uma barra com tempo restante.
+- **Mais robustez.** Vários `unwrap()` no handshake e no recebimento viraram
+  erros tratados, então um par malformado não derruba mais o app.
+- **Descoberta mais confiável.** Reanúncio mDNS periódico para o Android achar
+  o PC mais rápido.
+- **Tray com ações rápidas** (visibilidade, enviar, abrir recebidos,
+  preferências) e animações de transferência.
 
-## Requirements
-Since only the Wi-Fi LAN medium is implemented, Packet requires Bluetooth to be enabled and the devices to be connected to a Wi-Fi network with mDNS.
+## Requisitos
 
-## Translations
-If you'd like to help translate Packet to your native language, you can do so using the [Weblate][translation-platform] platform.
-
-[![Translation status][translation-status-widget]][translation-platform]
-
-## FAQ
-
-#### Can't send to app from other devices
-
-Your firewall may be blocking Packet's port. Enable *Static Port* in Preferences and allow it through the firewall. See issue [#35](https://github.com/nozwock/packet/issues/35).
-
-#### "Couldn't open files"
-
-This error occurs if the file is invalid (e.g. empty) or, on Flatpak, if you're sending files (via the Nautilus plugin) from a location Packet can't access.
-
-Consider granting "All system files" access via Flatseal to allow sending from any location. See [Downloads folder keeps resetting](#downloads-folder-keeps-resetting) for details.
-
-#### Downloads folder keeps resetting
-
-In Flatpak, folder access is temporary and resets after a session restart because static access can't be requested. To set a permanent downloads folder, grant access in advance using Flatseal or run:
-
-```sh
-flatpak override --user io.github.nozwock.Packet --filesystem='/path/to/your/folder/here'
-```
-
-## Plugin Requirements
-
-<!-- Don't change the heading since a link to it is being used in the app. -->
-
-To use the Nautilus plugin, install the required packages:
-
-- Ubuntu/Debian:\
-`sudo apt install python3-dbus python3-nautilus`
-- Fedora:\
-`sudo dnf install python3-dbus nautilus-python`
-- Arch:\
-`sudo pacman -S python-dbus nautilus-python`
-- Fedora Silverblue (rpm-ostree):\
-`rpm-ostree install python3-dbus nautilus-python`
+Apenas o meio Wi-Fi LAN é implementado, então o TKShare precisa de **Bluetooth
+ligado** e de ambos os dispositivos na **mesma rede Wi-Fi com mDNS**.
 
 ## Build
-The project uses [meson] for its build system. You can build the project either natively or in a flatpak environment.
 
-- Build and run via [meson]:
-    ```
-    # Build
-    meson setup build_dir
-    meson compile -C build_dir
+Requer a runtime GNOME via Flatpak:
 
-    # Run
-    meson devenv -C build_dir packet
+```bash
+flatpak install flathub org.gnome.Sdk//50 org.gnome.Platform//50 \
+  org.freedesktop.Sdk.Extension.rust-stable//25.08 \
+  org.freedesktop.Sdk.Extension.llvm20//25.08
 
-    # Install & Run
-    sudo meson install -C build_dir --no-rebuild
-    packet
-    ```
-- Build and run via flatpak:
-    ```
-    # Build
-    flatpak-builder --user flatpak_build_dir \
-        build-aux/io.github.nozwock.Packet.Devel.json
+flatpak-builder --force-clean --user --install builddir \
+  build-aux/io.github.NRTakeda.TKShare.Devel.json
 
-    # Run
-    flatpak-builder --run flatpak_build_dir \
-        build-aux/io.github.nozwock.Packet.Devel.json \
-        packet
-    ```
+flatpak run io.github.NRTakeda.TKShare.Devel
+```
 
-## Acknowledgments
-- [Dominik Baran][dominik] for creating the icon and working on the app's design.
-- [NearDrop][neardrop] for reverse-engineering the closed-source Quick Share implementation in Android's GMS.
-- [rquickshare] for their internal Rust implementation of the Quick Share protocol.
+## Créditos
 
-## Code of Conduct
-Packet follows the [GNOME Code of Conduct][gnome-coc].
+- [Packet](https://github.com/nozwock/packet) por **nozwock** — base da interface
+  GTK4/libadwaita.
+- [rquickshare](https://github.com/Martichou/rquickshare) por **Martichou** —
+  implementação do protocolo Quick Share (`rqs_lib`).
+- Design original por **Dominik Baran**.
 
-[nightly-build]: https://nightly.link/nozwock/packet/workflows/ci/main?preview
-[translation-platform]: https://hosted.weblate.org/engage/packet/
-[translation-status-widget]: https://hosted.weblate.org/widget/packet/multi-auto.svg
-[dominik]: https://gitlab.gnome.org/wallaby
-[neardrop]: https://github.com/grishka/NearDrop/
-[rquickshare]: https://github.com/Martichou/rquickshare/
-[flathub]: https://flathub.org/apps/details/io.github.nozwock.Packet
-[flathub-installs-badge]: https://img.shields.io/badge/dynamic/json?label=Installs&url=https%3A%2F%2Fflathub.org%2Fapi%2Fv2%2Fstats%2Fio.github.nozwock.Packet&query=%24.installs_total&logo=flathub&color=007ec6
-[gnome-coc]: https://conduct.gnome.org/
-[meson]: https://mesonbuild.com/
+## Licença
+
+GPL-3.0-or-later, como os projetos dos quais deriva.

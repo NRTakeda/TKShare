@@ -16,7 +16,7 @@ pub struct Packet {
     pub visibility_rx: Arc<Mutex<Receiver<bool>>>,
 }
 
-#[zbus::interface(name = "io.github.nozwock.Packet1")]
+#[zbus::interface(name = "io.github.NRTakeda.TKShare1")]
 impl Packet {
     #[zbus(property)]
     pub async fn device_name(&self) -> &str {

@@ -1,17 +1,17 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <gresources>
-  <gresource prefix="/io/github/nozwock/Packet/">
+  <gresource prefix="/io/github/NRTakeda/TKShare/">
     <!-- see https://gtk-rs.org/gtk4-rs/git/docs/gtk4/struct.Application.html#automatic-resources -->
     <file compressed="true" preprocess="xml-stripblanks" alias="shortcuts-dialog.ui">ui/shortcuts-dialog.ui</file>
     <file compressed="true" preprocess="xml-stripblanks">ui/window.ui</file>
     <file compressed="true">style.css</file>
   </gresource>
 
-  <gresource prefix="/io/github/nozwock/Packet/icons/scalable/status/">
-    <file compressed="true" preprocess="xml-stripblanks" alias="io.github.nozwock.Packet.svg">../icons/io.github.nozwock.Packet.svg</file>
+  <gresource prefix="/io/github/NRTakeda/TKShare/icons/scalable/status/">
+    <file compressed="true" preprocess="xml-stripblanks" alias="io.github.NRTakeda.TKShare.svg">../icons/io.github.NRTakeda.TKShare.svg</file>
   </gresource>
 
-  <gresource prefix="/io/github/nozwock/Packet/">
+  <gresource prefix="/io/github/NRTakeda/TKShare/">
     <file compressed="true" preprocess="xml-stripblanks">icons/scalable/actions/cross-large-symbolic.svg</file>
     <file compressed="true" preprocess="xml-stripblanks">icons/scalable/actions/network-available-symbolic.svg</file>
     <file compressed="true" preprocess="xml-stripblanks">icons/scalable/actions/eye-not-looking-symbolic.svg</file>

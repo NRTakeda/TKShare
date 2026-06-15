@@ -56,7 +56,7 @@ mod imp {
     use super::*;
 
     #[derive(gtk::CompositeTemplate, better_default::Default)]
-    #[template(resource = "/io/github/nozwock/Packet/ui/window.ui")]
+    #[template(resource = "/io/github/NRTakeda/TKShare/ui/window.ui")]
     pub struct PacketApplicationWindow {
         #[default(gio::Settings::new(APP_ID))]
         pub settings: gio::Settings,
@@ -972,7 +972,7 @@ impl PacketApplicationWindow {
         let response = Background::request()
             .identifier(ashpd::WindowIdentifier::from_native(&self.native().unwrap()).await)
             .auto_start(self.imp().settings.boolean("auto-start"))
-            .command(["packet", "--background"])
+            .command(["tkshare", "--background"])
             .dbus_activatable(false)
             .reason(gettext("Packet wants to run in the background").as_str())
             .send()
@@ -1138,7 +1138,10 @@ impl PacketApplicationWindow {
             #[weak]
             imp,
             async move {
-                let tray = crate::tray::Tray { tx: tx };
+                let tray = crate::tray::Tray {
+                    tx: tx,
+                    is_visible: imp.device_visibility_switch.is_active(),
+                };
                 let handle = if ashpd::is_sandboxed() {
                     tray.spawn_without_dbus_name().await
                 } else {
@@ -1160,6 +1163,27 @@ impl PacketApplicationWindow {
                     match msg {
                         tray::TrayMessage::OpenWindow => {
                             imp.obj().present();
+                        }
+                        tray::TrayMessage::SendFiles => {
+                            // Bring up the window so the file selection flow is visible,
+                            // then trigger the same picker used by the "Add Files" button.
+                            imp.obj().present();
+                            imp.main_add_files_button.emit_clicked();
+                        }
+                        tray::TrayMessage::ToggleVisibility => {
+                            // Flip the switch; its `active-notify` handler propagates
+                            // the change to settings, the engine and the tray checkmark.
+                            let switch = imp.device_visibility_switch.get();
+                            switch.set_active(!switch.is_active());
+                        }
+                        tray::TrayMessage::OpenReceivedFiles => {
+                            let win = imp.obj();
+                            _ = WidgetExt::activate_action(&*win, "received-files", None);
+                        }
+                        tray::TrayMessage::OpenPreferences => {
+                            let win = imp.obj();
+                            win.present();
+                            _ = WidgetExt::activate_action(&*win, "preferences", None);
                         }
                         tray::TrayMessage::Quit => {
                             imp.should_quit.replace(true);
@@ -1227,7 +1251,7 @@ impl PacketApplicationWindow {
                     ),
                     // Keeping it out of the msgid so that translators are less
                     // likely to mess something in here
-                    "href=\"https://github.com/nozwock/packet?tab=readme-ov-file#plugin-requirements\""
+                    "href=\"https://github.com/NRTakeda/TKShare?tab=readme-ov-file#plugin-requirements\""
                 )
                 .unwrap_or_default(),
             )
@@ -1407,12 +1431,31 @@ impl PacketApplicationWindow {
         imp.main_nav_content
             .get()
             .add_controller(files_drop_target.clone());
+        // Highlight the drop area while a drag hovers over it.
+        files_drop_target.connect_enter(clone!(
+            #[weak]
+            imp,
+            #[upgrade_or]
+            gdk::DragAction::COPY,
+            move |_, _, _| {
+                imp.main_nav_content.add_css_class("drop-hover");
+                gdk::DragAction::COPY
+            }
+        ));
+        files_drop_target.connect_leave(clone!(
+            #[weak]
+            imp,
+            move |_| {
+                imp.main_nav_content.remove_css_class("drop-hover");
+            }
+        ));
         files_drop_target.connect_drop(clone!(
             #[weak]
             imp,
             #[upgrade_or]
             false,
             move |_, value, _, _| {
+                imp.main_nav_content.remove_css_class("drop-hover");
                 imp.manage_files_model.remove_all();
                 if let Ok(file_list) = value.get::<gdk::FileList>() {
                     imp.obj()
@@ -1450,12 +1493,30 @@ impl PacketApplicationWindow {
         imp.manage_files_nav_content
             .get()
             .add_controller(manage_files_add_drop_target.clone());
+        manage_files_add_drop_target.connect_enter(clone!(
+            #[weak]
+            imp,
+            #[upgrade_or]
+            gdk::DragAction::COPY,
+            move |_, _, _| {
+                imp.manage_files_nav_content.add_css_class("drop-hover");
+                gdk::DragAction::COPY
+            }
+        ));
+        manage_files_add_drop_target.connect_leave(clone!(
+            #[weak]
+            imp,
+            move |_| {
+                imp.manage_files_nav_content.remove_css_class("drop-hover");
+            }
+        ));
         manage_files_add_drop_target.connect_drop(clone!(
             #[weak]
             imp,
             #[upgrade_or]
             false,
             move |_, value, _, _| {
+                imp.manage_files_nav_content.remove_css_class("drop-hover");
                 if let Ok(file_list) = value.get::<gdk::FileList>() {
                     imp.obj()
                         .handle_added_files_to_send(&imp.manage_files_model, file_list.files());
@@ -1625,6 +1686,13 @@ impl PacketApplicationWindow {
 
         self.bottom_bar_status_indicator_ui_update(visibility);
 
+        // Keep the tray's "Visible to Others" checkmark in sync, regardless of
+        // whether the change came from the switch, the tray or the remote peer.
+        #[cfg(target_os = "linux")]
+        if let Some(handle) = imp.tray_icon_handle.borrow().as_ref() {
+            handle.update(move |tray| tray.is_visible = visibility).await;
+        }
+
         if let Some(rqs) = imp.rqs.lock().await.as_mut() {
             let visibility = if visibility {
                 rqs_lib::Visibility::Visible
@@ -1651,6 +1719,9 @@ impl PacketApplicationWindow {
                 imp.bottom_bar_image
                     .set_icon_name(Some("network-available-symbolic"));
                 imp.bottom_bar_image.add_css_class("accent");
+                // Gently pulse the indicator while we're broadcasting and
+                // looking for nearby devices.
+                imp.bottom_bar_image.add_css_class("scanning");
                 imp.bottom_bar_caption.set_label(
                     &formatx!(
                         gettext("Visible as {:?}"),
@@ -1664,6 +1735,7 @@ impl PacketApplicationWindow {
                 imp.bottom_bar_image
                     .set_icon_name(Some("eye-not-looking-symbolic"));
                 imp.bottom_bar_image.remove_css_class("accent");
+                imp.bottom_bar_image.remove_css_class("scanning");
                 imp.bottom_bar_caption
                     .set_label(&gettext("No new devices can share with you"));
             };
@@ -1672,6 +1744,7 @@ impl PacketApplicationWindow {
                 .set_icon_name(Some("horizontal-arrows-long-x-symbolic"));
             imp.bottom_bar_title.set_label(&gettext("Disconnected"));
             imp.bottom_bar_image.remove_css_class("accent");
+            imp.bottom_bar_image.remove_css_class("scanning");
             imp.bottom_bar_title.remove_css_class("accent");
 
             if !network_state && !bluetooth_state {

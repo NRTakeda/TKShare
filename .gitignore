@@ -8,7 +8,6 @@
 *.ui.in~
 *.ui~
 /.flatpak/
-/vendor
 /.vscode
 
 /subprojects/blueprint-compiler
@@ -19,3 +18,7 @@
 __pycache__/
 *.py[cod]
 *$py.class
+
+# Flatpak build artifacts (raiz)
+/.flatpak-builder/
+/builddir-flatpak/

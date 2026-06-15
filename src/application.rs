@@ -215,7 +215,7 @@ impl PacketApplication {
 
     fn setup_css(&self) {
         let provider = gtk::CssProvider::new();
-        provider.load_from_resource("/io/github/nozwock/Packet/style.css");
+        provider.load_from_resource("/io/github/NRTakeda/TKShare/style.css");
         if let Some(display) = gdk::Display::default() {
             gtk::style_context_add_provider_for_display(
                 &display,
@@ -238,26 +238,30 @@ impl PacketApplication {
         let dialog = adw::AboutDialog::builder()
             .application_name(gettext(
                 // Translators: The name should remain untranslated
-                "Packet",
+                "TKShare",
             ))
             .application_icon(APP_ID)
             .version(VERSION)
-            .developer_name("nozwock")
+            .developer_name("Natan Ramos Takeda")
             // Legal section
             .license_type(gtk::License::Gpl30)
             // Details section
-            .website("https://github.com/nozwock/packet")
+            .website("https://github.com/NRTakeda/TKShare")
             // Credits and Acknowledgements section
             // format: "Name https://example.com" or "Name <email@example.com>"
-            .developers(["nozwock https://github.com/nozwock"])
+            .developers([
+                "Natan Ramos Takeda https://github.com/NRTakeda",
+                "nozwock (Packet, upstream) https://github.com/nozwock",
+                "Martichou (rquickshare, engine) https://github.com/Martichou",
+            ])
             .designers(["Dominik Baran https://gitlab.gnome.org/wallaby"])
             .translator_credits(gettext(
                 // Translators: Replace "translator-credits" with your names, one name per line
                 "translator-credits",
             ))
             // Troubleshooting section
-            .issue_url("https://github.com/nozwock/packet/issues")
-            .debug_info_filename("packet.log")
+            .issue_url("https://github.com/NRTakeda/TKShare/issues")
+            .debug_info_filename("tkshare.log")
             .debug_info(&gettext("Loading logs..."))
             .build();
 
@@ -317,7 +321,7 @@ impl PacketApplication {
     }
 
     pub fn run(&self) -> glib::ExitCode {
-        info!("Packet ({})", APP_ID);
+        info!("TKShare ({})", APP_ID);
         info!("Version: {} ({})", VERSION, PROFILE);
         info!("Datadir: {}", PKGDATADIR);
 
@@ -331,7 +335,7 @@ impl Default for PacketApplication {
     fn default() -> Self {
         glib::Object::builder()
             .property("application-id", APP_ID)
-            .property("resource-base-path", "/io/github/nozwock/Packet/")
+            .property("resource-base-path", "/io/github/NRTakeda/TKShare/")
             .build()
     }
 }

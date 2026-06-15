@@ -19,7 +19,7 @@ menu primary_menu {
         }
 
         item {
-            label: _("_About Packet");
+            label: _("_About TKShare");
             action: "app.about";
         }
     }
@@ -35,7 +35,7 @@ template $PacketApplicationWindow: Adw.ApplicationWindow {
 
             StackPage {
                 name: "loading_service_page";
-                title: _("Packet");
+                title: _("TKShare");
 
                 child: Adw.ToolbarView {
                     [top]
@@ -50,7 +50,7 @@ template $PacketApplicationWindow: Adw.ApplicationWindow {
 
                     Adw.StatusPage loading_rqs_status_page {
                         vexpand: true;
-                        title: _("Setting up Packet…");
+                        title: _("Setting up TKShare…");
 
                         paintable: Adw.SpinnerPaintable {
                             widget: loading_rqs_status_page;
@@ -61,7 +61,7 @@ template $PacketApplicationWindow: Adw.ApplicationWindow {
 
             StackPage {
                 name: "rqs_error_status_page";
-                title: _("Packet");
+                title: _("TKShare");
 
                 child: Adw.ToolbarView {
                     [top]
@@ -82,10 +82,10 @@ template $PacketApplicationWindow: Adw.ApplicationWindow {
                     }
 
                     Adw.StatusPage {
-                        // Translators: This is the title of the status page where some error occurred while trying to setup Packet
+                        // Translators: This is the title of the status page where some error occurred while trying to setup TKShare
                         icon-name: "dialog-error-symbolic";
                         title: _("Couldn't Set Up");
-                        description: _("An error occurred while trying to setup Packet");
+                        description: _("An error occurred while trying to setup TKShare");
                         vexpand: true;
 
                         Button rqs_error_retry_button {
@@ -215,8 +215,8 @@ template $PacketApplicationWindow: Adw.ApplicationWindow {
                                     Adw.StatusPage main_nav_content {
                                         vexpand: true;
                                         hexpand: true;
-                                        icon-name: "io.github.nozwock.Packet";
-                                        title: _("Packet");
+                                        icon-name: "io.github.NRTakeda.TKShare";
+                                        title: _("TKShare");
                                         description: _("Add, or drop a file to send");
 
                                         styles [
