@@ -92,6 +92,7 @@ test(
 service_conf = configuration_data()
 service_conf.set('app-id', application_id)
 service_conf.set('bindir', bindir)
+service_conf.set('bin-name', meson.project_name())
 configure_file(
     input: '@0@.service.in'.format(base_id),
     output: '@0@.service'.format(application_id),
@@ -103,6 +104,7 @@ configure_file(
 service_conf = configuration_data()
 service_conf.set('app-id', api_id)
 service_conf.set('bindir', bindir)
+service_conf.set('bin-name', meson.project_name())
 configure_file(
     input: '@0@.service.in'.format(base_id + '.Api'),
     output: '@0@.service'.format(api_id),
