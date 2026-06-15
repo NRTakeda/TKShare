@@ -82,6 +82,9 @@ mod imp {
         pub main_nav_view: TemplateChild<adw::NavigationView>,
 
         #[template_child]
+        pub hotspot_banner: TemplateChild<adw::Banner>,
+
+        #[template_child]
         pub bottom_bar_image: TemplateChild<gtk::Image>,
         #[template_child]
         pub bottom_bar_title: TemplateChild<gtk::Label>,
@@ -432,7 +435,13 @@ impl PacketApplicationWindow {
 
         let assisted_hotspot = gio::ActionEntry::builder("assisted-hotspot")
             .activate(move |win: &Self, _, _| {
-                win.show_assisted_hotspot_dialog();
+                // Toggle: if a temporary network is already up, stop it;
+                // otherwise bring one up.
+                if win.imp().hotspot_banner.is_revealed() {
+                    win.stop_assisted_hotspot_ui();
+                } else {
+                    win.start_assisted_hotspot_ui();
+                }
             })
             .build();
 
@@ -449,6 +458,27 @@ impl PacketApplicationWindow {
         self.imp().toast_overlay.add_toast(adw::Toast::new(msg));
     }
 
+    /// Render `data` as a QR code (SVG) into a `gtk::Picture` of `size` px.
+    fn build_qr_picture(data: &str, size: i32) -> Option<gtk::Picture> {
+        use qrcode::QrCode;
+        use qrcode::render::svg;
+
+        let code = QrCode::new(data.as_bytes()).ok()?;
+        let svg_xml = code
+            .render::<svg::Color>()
+            .min_dimensions(size as u32, size as u32)
+            .dark_color(svg::Color("#000000"))
+            .light_color(svg::Color("#ffffff"))
+            .build();
+
+        let bytes = glib::Bytes::from(svg_xml.as_bytes());
+        let texture = gdk::Texture::from_bytes(&bytes).ok()?;
+        let picture = gtk::Picture::for_paintable(&texture);
+        picture.set_size_request(size, size);
+        picture.set_can_shrink(false);
+        Some(picture)
+    }
+
     /// Detect the first Wi-Fi interface name from sysfs (e.g. "wlp0s20f3").
     fn detect_wifi_iface() -> Option<String> {
         let entries = std::fs::read_dir("/sys/class/net").ok()?;
@@ -462,9 +492,98 @@ impl PacketApplicationWindow {
         None
     }
 
-    /// Bring up an assisted hotspot and show its credentials so a phone can
-    /// join directly (for transferring without a shared network).
-    fn show_assisted_hotspot_dialog(&self) {
+    /// Build the QR popover content (QR image + credentials) for the given
+    /// Wi-Fi payload and credentials.
+    fn build_qr_popover(
+        &self,
+        payload: &str,
+        ssid: &str,
+        password: &str,
+        dry_run: bool,
+    ) -> gtk::Popover {
+        let content = gtk::Box::builder()
+            .orientation(gtk::Orientation::Vertical)
+            .spacing(10)
+            .halign(gtk::Align::Center)
+            .margin_top(12)
+            .margin_bottom(12)
+            .margin_start(12)
+            .margin_end(12)
+            .build();
+
+        let hint = gtk::Label::builder()
+            .label(if dry_run {
+                gettext("(Test mode) Scan to join")
+            } else {
+                gettext("Scan with your phone's camera to join")
+            })
+            .wrap(true)
+            .justify(gtk::Justification::Center)
+            .max_width_chars(28)
+            .build();
+        content.append(&hint);
+
+        if let Some(qr) = Self::build_qr_picture(payload, 220) {
+            content.append(&qr);
+        }
+
+        let creds_label = gtk::Label::builder()
+            .label(
+                &formatx::formatx!(gettext("Network: {}   ·   Password: {}"), ssid, password)
+                    .unwrap_or_default(),
+            )
+            .wrap(true)
+            .justify(gtk::Justification::Center)
+            .css_classes(["dimmed", "caption"])
+            .selectable(true)
+            .build();
+        content.append(&creds_label);
+
+        // Reminder: the phone must be visible to everyone for Quick Share to
+        // find this PC.
+        let visibility_hint = gtk::Label::builder()
+            .label(&gettext(
+                "On your phone, set Quick Share to be visible to \"Everyone\".",
+            ))
+            .wrap(true)
+            .justify(gtk::Justification::Center)
+            .max_width_chars(30)
+            .css_classes(["caption"])
+            .build();
+        content.append(&visibility_hint);
+
+        let popover = gtk::Popover::builder()
+            .child(&content)
+            .autohide(true)
+            .build();
+
+        // "Stop network" button right in the QR popover.
+        let stop_button = gtk::Button::builder()
+            .label(&gettext("Stop Network"))
+            .css_classes(["destructive-action", "pill"])
+            .halign(gtk::Align::Center)
+            .margin_top(6)
+            .build();
+        stop_button.connect_clicked(clone!(
+            #[weak(rename_to = win)]
+            self,
+            #[weak]
+            popover,
+            move |_| {
+                popover.popdown();
+                win.stop_assisted_hotspot_ui();
+            }
+        ));
+        content.append(&stop_button);
+
+        popover
+    }
+
+    /// Bring up an assisted hotspot. Instead of a blocking dialog, this shows a
+    /// banner at the top of the window (so the app stays fully usable) with a
+    /// "Show QR" button that pops the QR over the banner. Once a device joins,
+    /// the QR popover auto-closes.
+    fn start_assisted_hotspot_ui(&self) {
         let imp = self.imp();
 
         let Some(iface) = Self::detect_wifi_iface() else {
@@ -486,7 +605,6 @@ impl PacketApplicationWindow {
                 }
             }
         };
-
         let creds = match creds {
             Ok(c) => c,
             Err(e) => {
@@ -496,44 +614,88 @@ impl PacketApplicationWindow {
             }
         };
 
-        let body = if dry_run {
-            formatx::formatx!(
-                gettext("(Test mode) Would create network \"{}\" with password \"{}\""),
-                creds.ssid,
-                creds.password
-            )
-            .unwrap_or_default()
-        } else {
-            formatx::formatx!(
-                gettext("Connect your phone to Wi-Fi \"{}\" with password \"{}\", then share as usual. Close this to stop the network."),
-                creds.ssid,
-                creds.password
-            )
-            .unwrap_or_default()
-        };
-
-        let dialog = adw::AlertDialog::builder()
-            .heading(gettext("Temporary Network"))
-            .body(body)
-            .build();
-        dialog.add_responses(&[("close", &gettext("Stop Network"))]);
-        dialog.set_default_response(Some("close"));
-
-        dialog.connect_response(
-            None,
-            clone!(
-                #[weak(rename_to = win)]
-                self,
-                move |_, _| {
-                    let mut guard = win.imp().rqs.blocking_lock();
-                    if let Some(rqs) = guard.as_mut() {
-                        let _ = rqs.stop_assisted_hotspot();
-                    }
-                }
-            ),
+        let wifi_payload = format!(
+            "WIFI:T:WPA;S:{};P:{};;",
+            qr_escape(&creds.ssid),
+            qr_escape(&creds.password)
         );
 
-        dialog.present(Some(self));
+        // Build the QR popover, parented to the banner's button area.
+        let popover = self.build_qr_popover(&wifi_payload, &creds.ssid, &creds.password, dry_run);
+        popover.set_parent(&imp.hotspot_banner.get());
+
+        // Show the banner and wire its button to toggle the QR popover.
+        let banner = imp.hotspot_banner.get();
+        banner.set_title(&gettext("Temporary network active"));
+        banner.set_button_label(Some(&gettext("Show QR")));
+        banner.set_revealed(true);
+        // Refresh the bottom status bar to reflect the hotspot state.
+        self.bottom_bar_status_indicator_ui_update(imp.device_visibility_switch.is_active());
+
+        // Keep the popover handle so the button and the auto-close timer can
+        // reach it.
+        let popover_rc = std::rc::Rc::new(popover);
+
+        // Banner button toggles the QR.
+        banner.connect_button_clicked(clone!(
+            #[strong]
+            popover_rc,
+            move |_| {
+                if popover_rc.is_visible() {
+                    popover_rc.popdown();
+                } else {
+                    popover_rc.popup();
+                }
+            }
+        ));
+
+        // Open it right away so the QR is visible immediately.
+        popover_rc.popup();
+
+        // Poll for a connected station; when the phone joins, auto-close the QR
+        // (it has served its purpose) and update the banner.
+        if !dry_run {
+            let iface_for_poll = iface.clone();
+            glib::timeout_add_seconds_local(
+                2,
+                clone!(
+                    #[weak(rename_to = win)]
+                    self,
+                    #[strong]
+                    popover_rc,
+                    #[upgrade_or]
+                    glib::ControlFlow::Break,
+                    move || {
+                        // Stop polling if the hotspot was torn down.
+                        if !win.imp().hotspot_banner.is_revealed() {
+                            return glib::ControlFlow::Break;
+                        }
+                        if hotspot_has_station(&iface_for_poll) {
+                            popover_rc.popdown();
+                            win.imp()
+                                .hotspot_banner
+                                .set_title(&gettext("Phone connected — ready to share"));
+                            return glib::ControlFlow::Break;
+                        }
+                        glib::ControlFlow::Continue
+                    }
+                ),
+            );
+        }
+    }
+
+    /// Stop the assisted hotspot (if any) and hide the banner.
+    fn stop_assisted_hotspot_ui(&self) {
+        let imp = self.imp();
+        imp.hotspot_banner.set_revealed(false);
+        {
+            let mut guard = imp.rqs.blocking_lock();
+            if let Some(rqs) = guard.as_mut() {
+                let _ = rqs.stop_assisted_hotspot();
+            }
+        }
+        // Restore the normal status bar (Wi-Fi will be coming back).
+        self.bottom_bar_status_indicator_ui_update(imp.device_visibility_switch.is_active());
     }
 
     fn get_device_name_state(&self) -> glib::GString {
@@ -1805,6 +1967,22 @@ impl PacketApplicationWindow {
     fn bottom_bar_status_indicator_ui_update(&self, is_visible: bool) {
         let imp = self.imp();
 
+        // When the assisted hotspot is active the PC is off the regular Wi-Fi,
+        // so the usual "connect to Wi-Fi" status would be misleading. Show a
+        // dedicated hotspot status instead.
+        if imp.hotspot_banner.is_revealed() {
+            imp.bottom_bar_title
+                .set_label(&gettext("Temporary network"));
+            imp.bottom_bar_title.add_css_class("accent");
+            imp.bottom_bar_image
+                .set_icon_name(Some("network-wireless-hotspot-symbolic"));
+            imp.bottom_bar_image.add_css_class("accent");
+            imp.bottom_bar_image.remove_css_class("scanning");
+            imp.bottom_bar_caption
+                .set_label(&gettext("Phone connected to this PC's network"));
+            return;
+        }
+
         let network_state = imp.network_state.get();
         let bluetooth_state = imp.bluetooth_state.get();
 
@@ -2761,4 +2939,38 @@ impl PacketApplicationWindow {
 
         rqs_init_handle
     }
+}
+
+/// Returns true if at least one station (device) is associated with our AP on
+/// `iface`. Uses `iw dev <iface> station dump`, run on the host when sandboxed.
+fn hotspot_has_station(iface: &str) -> bool {
+    use std::process::Command;
+    let sandboxed = std::path::Path::new("/.flatpak-info").exists();
+    let output = if sandboxed {
+        Command::new("flatpak-spawn")
+            .args(["--host", "iw", "dev", iface, "station", "dump"])
+            .output()
+    } else {
+        Command::new("iw")
+            .args(["dev", iface, "station", "dump"])
+            .output()
+    };
+    match output {
+        // Any "Station <mac>" line means a device is connected.
+        Ok(out) => String::from_utf8_lossy(&out.stdout).contains("Station "),
+        Err(_) => false,
+    }
+}
+
+/// Escape the special characters (`\ ; , : "`) in a Wi-Fi QR payload field so
+/// SSIDs/passwords containing them are read correctly by phone cameras.
+fn qr_escape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        if matches!(c, '\\' | ';' | ',' | ':' | '"') {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out
 }

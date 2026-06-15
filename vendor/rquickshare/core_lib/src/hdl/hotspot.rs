@@ -16,6 +16,27 @@ use anyhow::{Context, anyhow};
 
 const NMCLI: &str = "nmcli";
 
+/// True when running inside a Flatpak sandbox (where the host's `nmcli` is not
+/// directly reachable and must be invoked through `flatpak-spawn --host`).
+fn in_flatpak_sandbox() -> bool {
+    std::path::Path::new("/.flatpak-info").exists()
+}
+
+/// Build a `Command` that runs `nmcli <args>` on the host, transparently using
+/// `flatpak-spawn --host` when sandboxed. Requires the manifest to grant
+/// `--talk-name=org.freedesktop.Flatpak`.
+fn nmcli_command(args: &[&str]) -> Command {
+    if in_flatpak_sandbox() {
+        let mut cmd = Command::new("flatpak-spawn");
+        cmd.arg("--host").arg(NMCLI).args(args);
+        cmd
+    } else {
+        let mut cmd = Command::new(NMCLI);
+        cmd.args(args);
+        cmd
+    }
+}
+
 // Protocol types for medium-upgrade negotiation (phase 2).
 use crate::location_nearby_connections::bandwidth_upgrade_negotiation_frame::{
     EventType, UpgradePathInfo,
@@ -62,8 +83,7 @@ impl HotspotManager {
             info!("[hotspot dry-run] {NMCLI} {}", args.join(" "));
             return Ok(String::new());
         }
-        let out = Command::new(NMCLI)
-            .args(args)
+        let out = nmcli_command(args)
             .output()
             .with_context(|| format!("failed to spawn {NMCLI}"))?;
         if !out.status.success() {
@@ -79,8 +99,7 @@ impl HotspotManager {
     /// Returns the currently active Wi-Fi connection name, if any.
     fn active_wifi_connection(&self) -> anyhow::Result<Option<String>> {
         // In dry-run we can still query (read-only), so don't short-circuit.
-        let out = Command::new(NMCLI)
-            .args(["-t", "-f", "NAME,TYPE", "connection", "show", "--active"])
+        let out = nmcli_command(&["-t", "-f", "NAME,TYPE", "connection", "show", "--active"])
             .output()
             .with_context(|| format!("failed to spawn {NMCLI}"))?;
         let text = String::from_utf8_lossy(&out.stdout);

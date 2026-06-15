@@ -10,6 +10,7 @@
     "command": "tkshare",
     "finish-args": [
         "--talk-name=org.kde.StatusNotifierWatcher",
+        "--talk-name=org.freedesktop.Flatpak",
         "--filesystem=home/.local/share/nautilus-python/extensions",
         "--allow=bluetooth",
         "--share=network",

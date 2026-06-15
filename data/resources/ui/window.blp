@@ -202,6 +202,14 @@ template $PacketApplicationWindow: Adw.ApplicationWindow {
                         hexpand: true;
                         vexpand: true;
 
+                        Adw.Banner hotspot_banner {
+                            // Shown while a temporary network is active. The
+                            // button text/action is set from code (Show QR).
+                            revealed: false;
+                            title: _("Temporary network active");
+                            button-label: _("Show QR");
+                        }
+
                         Adw.NavigationView main_nav_view {
                             Adw.NavigationPage {
                                 title: _("Main Page");
