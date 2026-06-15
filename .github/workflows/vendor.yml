@@ -22,21 +22,25 @@ jobs:
         run: build-aux/dist-vendor.sh ../ src
         shell: bash
       - name: Archive repository
-        run: git archive --format tar HEAD > packet-${{ github.ref_name }}.tar
+        run: git archive --format tar HEAD > tkshare-${{ github.ref_name }}.tar
       - name: Add vendored sources and cargo config to tarball
-        run: tar -rf packet-${{ github.ref_name }}.tar .cargo vendor
+        run: tar -rf tkshare-${{ github.ref_name }}.tar .cargo vendor-crates
       - name: Compress tarball
-        run: xz -z packet-${{ github.ref_name }}.tar
+        run: xz -z tkshare-${{ github.ref_name }}.tar
       - name: Generate checksum
-        run: sha256sum packet-${{ github.ref_name }}.tar.xz > packet-${{ github.ref_name }}.tar.xz.sha256sum
+        run: sha256sum tkshare-${{ github.ref_name }}.tar.xz > tkshare-${{ github.ref_name }}.tar.xz.sha256sum
       - name: Install xmllint & pandoc
         run: sudo apt-get install -y libxml2-utils pandoc
       - name: Extract release notes
         run: |
           changelog_version=$(xmllint --xpath 'string(//release[1]/@version)' data/io.github.NRTakeda.TKShare.releases.xml.in.in)
+          # The git tag is prefixed with "v" (e.g. v0.6.2) while the changelog
+          # version is not (0.6.2); strip the prefix before comparing.
+          tag_version="${{ github.ref_name }}"
+          tag_version="${tag_version#v}"
           echo "Changelog version: $changelog_version"
-          echo "Git tag: ${{ github.ref_name }}"
-          if [ "$changelog_version" = "${{ github.ref_name }}" ]; then
+          echo "Git tag (normalized): $tag_version"
+          if [ "$changelog_version" = "$tag_version" ]; then
             {
               echo 'RELEASE_NOTES<<EOF'
               xmllint --xpath '//release[1]/description' data/io.github.NRTakeda.TKShare.releases.xml.in.in \
@@ -53,5 +57,5 @@ jobs:
           body: ${{ env.RELEASE_NOTES }}
           prerelease: ${{ contains(github.ref, 'beta') }}
           files: |
-            packet-${{ github.ref_name }}.tar.xz
-            packet-${{ github.ref_name }}.tar.xz.sha256sum
+            tkshare-${{ github.ref_name }}.tar.xz
+            tkshare-${{ github.ref_name }}.tar.xz.sha256sum
