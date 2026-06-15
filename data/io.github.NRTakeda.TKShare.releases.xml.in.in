@@ -1,5 +1,18 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <releases>
+  <release version="0.6.2" date="2026-06-15">
+    <description translatable="no">
+      <p>Changes</p>
+      <ul>
+        <li>Assisted temporary network: create a Wi-Fi hotspot from the app and share via QR code when there's no common network (experimental, opt-in).</li>
+        <li>Polished the temporary network UI: framed QR code, clearer test-mode indicator, and monospace credentials.</li>
+      </ul>
+      <p>Fixes</p>
+      <ul>
+        <li>Fixed the app not launching from its menu icon (the D-Bus service pointed to a stale binary name).</li>
+      </ul>
+    </description>
+  </release>
   <release version="0.6.1" date="2026-04-18">
     <description translatable="no">
       <p>Fixes</p>
