@@ -22,3 +22,9 @@ __pycache__/
 # Flatpak build artifacts (raiz)
 /.flatpak-builder/
 /builddir-flatpak/
+/builddir-flatpak-prod/
+
+# Contexto local do Claude (NÃO versionar — contém notas e dados do ambiente)
+/CLAUDE.md
+/.claude/
+/vendor-crates/
